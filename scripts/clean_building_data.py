@@ -1,41 +1,48 @@
+from pathlib import Path
 import geopandas as gpd
 import pandas as pd
 
-# Input/output paths (relative)
-input_file = "data/ixelles_residential.geojson"
-output_file = "results/ixelles_clean.geojson"
+# Dossier racine du projet
+BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Load data
+# Fichiers d'entrée et de sortie
+input_file = BASE_DIR / "results" / "ixelles_residential.geojson"
+output_file = BASE_DIR / "results" / "ixelles_clean.geojson"
+
+# Créer le dossier results s'il n'existe pas
+output_file.parent.mkdir(parents=True, exist_ok=True)
+
+# Charger les données
 gdf = gpd.read_file(input_file)
 
 print("Initial number of buildings:", len(gdf))
 
-# 1. Keep valid geometries
+# 1. Garder uniquement les géométries non nulles et valides
 gdf = gdf[gdf.geometry.notnull()]
 gdf = gdf[gdf.is_valid]
 
-# 2. Reproject to Belgian CRS (meters)
+# 2. Reprojeter en coordonnées belges (mètres)
 gdf = gdf.to_crs(epsg=31370)
 
-# 3. Remove very small geometries
+# 3. Supprimer les très petites géométries
 gdf = gdf[gdf.geometry.area > 1]
 
-# 4. Keep only useful columns
+# 4. Garder seulement les colonnes utiles
 cols_to_keep = ["@id", "building", "building:levels", "geometry"]
-cols_existing = [c for c in cols_to_keep if c in gdf.columns]
+cols_existing = [col for col in cols_to_keep if col in gdf.columns]
 gdf = gdf[cols_existing].copy()
 
-# 5. Clean building levels column
+# 5. Nettoyer la colonne building:levels
 if "building:levels" in gdf.columns:
     gdf["building:levels"] = pd.to_numeric(gdf["building:levels"], errors="coerce")
 
-# 6. Remove duplicates
+# 6. Supprimer les doublons selon @id
 if "@id" in gdf.columns:
     gdf = gdf.drop_duplicates(subset="@id")
 
 print("After cleaning:", len(gdf))
 
-# Save cleaned data
+# Sauvegarder le fichier nettoyé
 gdf.to_file(output_file, driver="GeoJSON")
 
 print("File saved at:", output_file)
