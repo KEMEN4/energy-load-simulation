@@ -1,3 +1,4 @@
+from pathlib import Path
 import os
 import pandas as pd
 import numpy as np
@@ -6,20 +7,18 @@ import matplotlib.pyplot as plt
 # ============================================
 # 1. FILE PATHS
 # ============================================
-# Run this script from the project root:
-# python scripts/simulate_dynamic_heating_profile.py
+BASE_DIR = Path(__file__).resolve().parent.parent
 
-buildings_file = "results/ixelles_final.csv"
-weather_file = "data/weather_2025.csv"
+buildings_file = BASE_DIR / "results" / "ixelles_final.csv"
+weather_file = BASE_DIR / "data" / "POWER_Point_Hourly_20250101_20251231_050d85N_004d35E_UTC(1).csv"
 
-output_hourly = "results/profil_chaleur_ixelles_complet.csv"
-output_buildings = "results/ixelles_buildings_enrichi.csv"
-output_plot_full = "results/profil_chauffage_annuel_lisse.png"
-output_plot_week = "results/profil_chauffage_premiere_semaine_lisse.png"
-output_plot_temp = "results/profil_chauffage_et_temperature_lisse.png"
+output_hourly = BASE_DIR / "results" / "profil_chaleur_ixelles_complet.csv"
+output_buildings = BASE_DIR / "results" / "ixelles_buildings_enrichi.csv"
+output_plot_full = BASE_DIR / "results" / "profil_chauffage_annuel_lisse.png"
+output_plot_week = BASE_DIR / "results" / "profil_chauffage_premiere_semaine_lisse.png"
+output_plot_temp = BASE_DIR / "results" / "profil_chauffage_et_temperature_lisse.png"
 
-# Create results folder if it does not exist
-os.makedirs("results", exist_ok=True)
+os.makedirs(BASE_DIR / "results", exist_ok=True)
 
 # ============================================
 # 2. LOAD BUILDING DATA
@@ -71,22 +70,12 @@ if len(hours) != len(Tout):
 # ============================================
 dt = 1.0  # hour
 
-# Initial indoor temperature
 df["Tin"] = 20.0
-
-# Simplified thermal capacity
 df["k"] = df["area_total_m2"] * 0.1
-
-# Maximum heating power
 df["Qmax"] = df["area_total_m2"] * 0.1
-
-# Internal gains
 df["Qgain"] = df["area_total_m2"] * 0.005
-
-# Solar gains neglected
 df["Qsolar"] = 0.0
 
-# Compute G from annual heating demand
 Tset_ref = 20.0
 delta_T_sum = np.sum(np.maximum(Tset_ref - Tout, 0))
 
@@ -111,37 +100,28 @@ for t in range(len(Tout)):
     hour = hours[t].hour
     weekday = hours[t].weekday()
 
-    # Setpoint schedule
-    if weekday < 5:  # Monday-Friday
+    if weekday < 5:
         if 6 <= hour <= 22:
             Tset_t = 21.0
         else:
             Tset_t = 16.0
-    else:  # Weekend
+    else:
         if 8 <= hour <= 23:
             Tset_t = 21.0
         else:
             Tset_t = 16.0
 
-    # Heat losses
     Qloss = df["G"] * (df["Tin"] - Tout[t])
-
-    # Energy required to reach setpoint
     delta_Q = df["k"] * (Tset_t - df["Tin"])
-
-    # Total heating demand
     Qdemand = Qloss + (delta_Q / dt)
 
-    # Actual heating, bounded between 0 and Qmax
     Qheating = Qdemand.clip(lower=0)
     Qheating = np.minimum(Qheating, df["Qmax"])
 
-    # Update indoor temperature
     df["Tin"] = df["Tin"] + dt * (
         Qheating + df["Qgain"] + df["Qsolar"] - Qloss
     ) / df["k"]
 
-    # Store hourly aggregated values
     Qloss_total_list.append(Qloss.sum())
     Qneeded_total_list.append(delta_Q.sum())
     Qdemand_total_list.append(Qdemand.sum())
@@ -163,7 +143,6 @@ df_hourly = pd.DataFrame({
     "Qheating_total_kW": Qheating_total_list
 })
 
-# Annual smoothed profile (7-day rolling average)
 df_hourly["Qheating_smooth_kW"] = (
     df_hourly["Qheating_total_kW"]
     .rolling(window=24 * 7, center=True, min_periods=1)
@@ -185,7 +164,6 @@ print("Simulated annual heating demand (MWh):", annual_simulated_MWh)
 # ============================================
 # 9. SAVE SMOOTHED PLOTS
 # ============================================
-# Annual smoothed profile
 plt.figure(figsize=(12, 5))
 plt.plot(df_hourly["time"], df_hourly["Qheating_smooth_kW"])
 plt.xlabel("Time")
@@ -195,7 +173,6 @@ plt.tight_layout()
 plt.savefig(output_plot_full, dpi=300)
 plt.close()
 
-# First week smoothed profile
 subset = df_hourly.iloc[:24 * 7].copy()
 subset["Qheating_smooth_kW"] = (
     subset["Qheating_total_kW"]
@@ -212,7 +189,6 @@ plt.tight_layout()
 plt.savefig(output_plot_week, dpi=300)
 plt.close()
 
-# First week: heating + outdoor temperature
 fig, ax1 = plt.subplots(figsize=(12, 5))
 ax1.plot(subset["time"], subset["Qheating_smooth_kW"])
 ax1.set_xlabel("Time")
