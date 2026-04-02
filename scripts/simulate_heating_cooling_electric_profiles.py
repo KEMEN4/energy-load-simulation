@@ -1,31 +1,35 @@
+from pathlib import Path
 import os
 import pandas as pd
 import numpy as np
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 # =========================================================
 # 1. FILE PATHS
 # =========================================================
-buildings_file = "results/ixelles_final.csv"
-weather_file = "data/weather_2025.csv"
-output_file = "results/profil_chaleur_refroidissement_ixelles.csv"
+BASE_DIR = Path(__file__).resolve().parent.parent
 
-out_dir = "results"
+buildings_file = BASE_DIR / "results" / "ixelles_final.csv"
+weather_file = BASE_DIR / "data" / "POWER_Point_Hourly_20250101_20251231_050d85N_004d35E_UTC(1).csv"
+output_file = BASE_DIR / "results" / "profil_chaleur_refroidissement_ixelles.csv"
+
+out_dir = BASE_DIR / "results"
 os.makedirs(out_dir, exist_ok=True)
 
-plot_annual_all = os.path.join(out_dir, "profil_annuel_complet_ixelles.png")
-plot_daily_all = os.path.join(out_dir, "profil_journalier_complet_ixelles.png")
-plot_monthly_all = os.path.join(out_dir, "profil_mensuel_complet_ixelles.png")
+plot_annual_all = out_dir / "profil_annuel_complet_ixelles.png"
+plot_daily_all = out_dir / "profil_journalier_complet_ixelles.png"
+plot_monthly_all = out_dir / "profil_mensuel_complet_ixelles.png"
 
-plot_annual_elec_total = os.path.join(out_dir, "profil_annuel_electricite_totale_ixelles.png")
-plot_daily_elec_total = os.path.join(out_dir, "profil_journalier_electricite_totale_ixelles.png")
-plot_monthly_elec_total = os.path.join(out_dir, "profil_mensuel_electricite_totale_ixelles.png")
+plot_annual_elec_total = out_dir / "profil_annuel_electricite_totale_ixelles.png"
+plot_daily_elec_total = out_dir / "profil_journalier_electricite_totale_ixelles.png"
+plot_monthly_elec_total = out_dir / "profil_mensuel_electricite_totale_ixelles.png"
 
-plot_cop_eer = os.path.join(out_dir, "profil_COP_EER_ixelles.png")
-plot_cop = os.path.join(out_dir, "profil_COP_ixelles.png")
-plot_eer = os.path.join(out_dir, "profil_EER_ixelles.png")
+plot_cop_eer = out_dir / "profil_COP_EER_ixelles.png"
+plot_cop = out_dir / "profil_COP_ixelles.png"
+plot_eer = out_dir / "profil_EER_ixelles.png"
 
 # =========================================================
 # 2. HEAT PUMP PARAMETERS
@@ -196,7 +200,6 @@ for t in range(len(Tout)):
     hour = current_time.hour
     weekday = current_time.weekday()
 
-    # 11.1 Occupancy
     if weekday < 5:
         if 6 <= hour <= 8 or 18 <= hour <= 22:
             p_active = 0.80
@@ -212,7 +215,6 @@ for t in range(len(Tout)):
 
     A_t = (np.random.rand(len(df)) < p_active).astype(int)
 
-    # 11.2 Heating setpoint
     Tset_heat = np.where(
         A_t == 1,
         np.random.normal(21.0, 2.0, len(df)),
@@ -220,7 +222,6 @@ for t in range(len(Tout)):
     )
     Tset_heat = np.clip(Tset_heat, 12.0, 24.0)
 
-    # 11.3 Cooling setpoint
     Tset_cool = np.where(
         A_t == 1,
         np.random.normal(25.0, 1.0, len(df)),
@@ -228,7 +229,6 @@ for t in range(len(Tout)):
     )
     Tset_cool = np.clip(Tset_cool, 23.0, 30.0)
 
-    # 11.4 Internal gains
     qgain_density = np.where(
         A_t == 1,
         np.random.normal(0.006, 0.001, len(df)),
@@ -237,16 +237,10 @@ for t in range(len(Tout)):
     qgain_density = np.clip(qgain_density, 0.0005, 0.006)
     Qgain = qgain_density * df["area_total_m2"].values
 
-    # 11.5 Non-HVAC electricity
     Pnonhvac = nonhvac_fraction * Qgain
-
-    # 11.6 Solar gains
     Qsolar = Irr[t] * (df["area_total_m2"].values * window_ratio) * solar_factor / 1000.0
-
-    # 11.7 Thermal losses
     Qloss = df["G"].values * (df["Tin"].values - Tout[t])
 
-    # 11.8 Heating demand
     DeltaQ_heat = df["k"].values * (Tset_heat - df["Tin"].values)
     Qdemand_heat = Qloss + (DeltaQ_heat / dt)
     Qheating = np.clip(Qdemand_heat, 0, None)
@@ -255,51 +249,41 @@ for t in range(len(Tout)):
     Qheating = Qheating * factor
     Qheating = np.minimum(Qheating, df["Qheat_max"].values)
 
-    # Heating smoothing
     Qheating = 0.8 * Qheating + 0.2 * Qheating_prev
     Qheating_prev = Qheating.copy()
 
-    # 11.9 Cooling demand
     DeltaQ_cool = df["k"].values * (df["Tin"].values - Tset_cool)
     Qdemand_cool = (-Qloss) + (DeltaQ_cool / dt) + Qgain + Qsolar
     Qcooling = np.clip(Qdemand_cool, 0, None)
     Qcooling = np.minimum(Qcooling, df["Qcool_max"].values)
     Qcooling = Qcooling * df["has_cooling"].values
 
-    # Cooling smoothing
     Qcooling = 0.6 * Qcooling + 0.4 * Qcooling_prev
     Qcooling_prev = Qcooling.copy()
 
-    # Avoid simultaneous heating and cooling
     cooling_mask = Qcooling > 0
     Qheating[cooling_mask] = 0.0
 
-    # 11.10 COP / EER
     COP_t = cop_carnot_heating(Tout[t], Tset_heat)
     EER_t = eer_carnot_cooling(Tout[t], Tset_cool)
 
-    heating_on = (Qheating > 0.0)
+    heating_on = Qheating > 0.0
     cooling_on = (Qcooling > 0.0) & (Tout[t] >= cool_cutoff_temp) & (~heating_on)
 
     Qheating_served = np.where(heating_on, Qheating, 0.0)
     Qcooling_served = np.where(cooling_on, Qcooling, 0.0)
 
-    # 11.11 Heat pump electricity
     P_heat_elec = np.where(heating_on, Qheating_served / COP_t, 0.0)
     P_cool_elec = np.where(cooling_on, Qcooling_served / EER_t, 0.0)
     P_hvac_elec = P_heat_elec + P_cool_elec
-
-    # 11.12 Total electricity
     Peltotal = P_hvac_elec + Pnonhvac
 
-    # 11.13 Update indoor temperature
     Tin_new = df["Tin"].values + dt * (
         Qheating_served + Qgain + Qsolar - Qloss - Qcooling_served
     ) / df["k"].values
 
     df["Tin"] = np.clip(Tin_new, 10.0, 35.0)
 
-    # 11.14 Store results
     Qheating_total.append(Qheating_served.sum())
     Qcooling_total.append(Qcooling_served.sum())
     Qsolar_total.append(Qsolar.sum())
@@ -369,7 +353,8 @@ df_plot = pd.read_csv(output_file)
 df_plot["time"] = pd.to_datetime(df_plot["time"])
 
 df_daily = df_plot.resample("D", on="time").mean(numeric_only=True)
-df_monthly = df_plot.resample("ME", on="time").mean(numeric_only=True)
+#df_monthly = df_plot.resample("ME", on="time").mean(numeric_only=True)
+df_monthly = df_plot.resample("M", on="time").mean(numeric_only=True)
 
 # =========================================================
 # 14. ANNUAL COMPLETE PROFILE
@@ -513,11 +498,17 @@ if len(df_eer) > 0:
 nb_heures_chauffage = (df_hourly["Qheating_total_kW"] > 0).sum()
 print("Number of heating hours:", nb_heures_chauffage)
 
-print("Share of heating electricity (%):",
-      100 * df_hourly["Pheat_elec_total_kW"].sum() / df_hourly["Peltotal_total_kW"].sum())
+print(
+    "Share of heating electricity (%):",
+    100 * df_hourly["Pheat_elec_total_kW"].sum() / df_hourly["Peltotal_total_kW"].sum()
+)
 
-print("Share of cooling electricity (%):",
-      100 * df_hourly["Pcool_elec_total_kW"].sum() / df_hourly["Peltotal_total_kW"].sum())
+print(
+    "Share of cooling electricity (%):",
+    100 * df_hourly["Pcool_elec_total_kW"].sum() / df_hourly["Peltotal_total_kW"].sum()
+)
 
-print("Share of non-HVAC electricity (%):",
-      100 * df_hourly["Pnonhvac_total_kW"].sum() / df_hourly["Peltotal_total_kW"].sum())
+print(
+    "Share of non-HVAC electricity (%):",
+    100 * df_hourly["Pnonhvac_total_kW"].sum() / df_hourly["Peltotal_total_kW"].sum()
+)
