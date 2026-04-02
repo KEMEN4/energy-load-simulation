@@ -1,28 +1,33 @@
 from pathlib import Path
+import geopandas as gpd
+import pandas as pd
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 input_file = BASE_DIR / "data" / "export(1).geojson"
 output_file = BASE_DIR / "results" / "ixelles_residential.geojson"
 
-# Load the GeoJSON file into a GeoDataFrame
+# Créer le dossier results s'il n'existe pas
+output_file.parent.mkdir(parents=True, exist_ok=True)
+
+# Charger le fichier GeoJSON
 gdf = gpd.read_file(input_file)
 
-# List of building types considered as residential
+# Types de bâtiments considérés comme résidentiels
 residential_values = ["apartments", "house", "residential"]
 
-# Check if the 'building' column exists in the dataset
+# Vérifier que la colonne 'building' existe
 if "building" not in gdf.columns:
-    print("The 'building' column does not exist.")
-    print("Available columns:", gdf.columns.tolist())
+    print("La colonne 'building' n'existe pas.")
+    print("Colonnes disponibles :", gdf.columns.tolist())
 else:
-    # Filter only residential buildings
+    # Filtrer les bâtiments résidentiels
     gdf_res = gdf[gdf["building"].isin(residential_values)].copy()
 
-    # Save the filtered data to a new GeoJSON file
+    # Sauvegarder le résultat
     gdf_res.to_file(output_file, driver="GeoJSON")
 
-    # Print summary information
+    # Afficher un résumé
     print("Total buildings:", len(gdf))
     print("Residential buildings:", len(gdf_res))
     print("File saved at:", output_file)
