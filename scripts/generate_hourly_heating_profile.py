@@ -1,14 +1,28 @@
+from pathlib import Path
 import pandas as pd
 import numpy as np
 
 # ======================
+# 0. PATHS
+# ======================
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+buildings_file = BASE_DIR / "results" / "ixelles_final.csv"
+weather_file = BASE_DIR / "data" / "POWER_Point_Hourly_20250101_20251231_050d85N_004d35E_UTC(1).csv"
+
+
+output_hourly = BASE_DIR / "results" / "ixelles_hourly_real.csv"
+output_buildings = BASE_DIR / "results" / "ixelles_with_G.csv"
+
+output_hourly.parent.mkdir(parents=True, exist_ok=True)
+
+# ======================
 # 1. LOAD BUILDING DATA
 # ======================
-buildings_file = "results/ixelles_final.csv"
 df = pd.read_csv(buildings_file)
 
 print("Buildings:", len(df))
-print(df.columns)
+print(df.columns.tolist())
 
 # Minimal validation
 required_cols = ["area_total_m2", "heating_kWh_year"]
@@ -19,8 +33,6 @@ for col in required_cols:
 # ======================
 # 2. LOAD WEATHER DATA
 # ======================
-weather_file = "data/weather_2025.csv"
-
 # NASA POWER files may contain text lines before the actual header
 with open(weather_file, "r", encoding="utf-8") as f:
     lines = f.readlines()
@@ -62,13 +74,9 @@ if len(hours) != len(temp):
 # ======================
 # 4. PAPER STEP 4: COMPUTE G
 # ======================
-# Simplified indoor setpoint temperature
 Tset = 20.0  # °C
 
-# Temperature difference only when heating is needed
 delta_T = np.maximum(0, Tset - temp)
-
-# Annual sum of temperature differences
 delta_T_sum = delta_T.sum()
 
 if delta_T_sum <= 0:
@@ -76,7 +84,6 @@ if delta_T_sum <= 0:
 
 print("Sum of delta T:", delta_T_sum)
 
-# AHD_i = heating_kWh_year
 df["G_kW_per_K"] = df["heating_kWh_year"] / delta_T_sum
 
 print(df[["heating_kWh_year", "G_kW_per_K"]].head())
@@ -103,9 +110,6 @@ print("Reconstructed annual demand (MWh):", df_hourly["heat_demand_kWh"].sum() /
 # ======================
 # 6. SAVE OUTPUTS
 # ======================
-output_hourly = "results/ixelles_hourly_real.csv"
-output_buildings = "results/ixelles_with_G.csv"
-
 df_hourly.to_csv(output_hourly, index=False)
 df.to_csv(output_buildings, index=False)
 
